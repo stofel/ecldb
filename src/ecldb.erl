@@ -177,7 +177,10 @@ norma(ClusterName) ->
 
 
 
-%% Mode = info|start|init
+%% Opts = #{mode => Mode}, 
+%% Mode = info|start|init|temp
+%%  temp - for temporary process manage
+%%
 call(C, Key, Msg, Opts) ->
   KeyHash = ecldb_misc:md5_hex(Key),
   Route = ecldb_ring:route(C, C:mode(), KeyHash),

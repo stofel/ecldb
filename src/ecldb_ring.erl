@@ -247,82 +247,6 @@ insert(B, K, V) ->
 
 
 
-%% @doc: Update the value stored under the key by calling F on the old
-%% value to get a new value. If the key is not present, initial will
-%% be stored as the first value. Same as dict:update/4. Note: find and
-%% insert requires two binary searches in the binary, while update
-%% only needs one. It's as close to in-place update we can get in pure
-%% Erlang.
-update(B, K, Initial, F) when byte_size(K) =/= B#bindict.key_size orelse
-                              byte_size(Initial) =/= B#bindict.value_size orelse
-                              not is_function(F) ->
-    erlang:error(badarg);
-
-update(B, K, Initial, F) ->
-    Index = index(B, K),
-    LeftOffset = Index * B#bindict.block_size,
-    RightOffset = byte_size(B#bindict.b) - LeftOffset,
-
-    KeySize = B#bindict.key_size,
-    ValueSize = B#bindict.value_size,
-
-    case B#bindict.b of
-        <<Left:LeftOffset/binary, K:KeySize/binary, OldV:ValueSize/binary, Right/binary>> ->
-            case F(OldV) of
-                OldV ->
-                    B;
-                NewV ->
-                    byte_size(NewV) =:= ValueSize orelse erlang:error(badarg),
-                    B#bindict{b = iolist_to_binary([Left, K, NewV, Right])}
-            end;
-
-        <<Left:LeftOffset/binary, Right:RightOffset/binary>> ->
-            B#bindict{b = iolist_to_binary([Left, K, Initial, Right])}
-    end.
-
--spec append(bindict(), key(), value()) -> bindict().
-%% @doc: Append a key and value. This is only useful if the key is known
-%% to be larger than any other key. Otherwise it will corrupt the bindict.
-append(B, K, V) when byte_size(K) =/= B#bindict.key_size orelse
-                     byte_size(V) =/= B#bindict.value_size ->
-    erlang:error(badarg);
-
-append(B, K, V) ->
-    case last(B) of
-        {KLast, _} when K =< KLast ->
-          erlang:error(badarg);
-        _ ->
-          Bin = B#bindict.b,
-          B#bindict{b = <<Bin/binary, K/binary, V/binary>>}
-    end.
-
--spec cas(bindict(), key(), value() | 'not_found', value()) -> bindict().
-%% @doc: Check-and-set operation. If 'not_found' is specified as the
-%% old value, the key should not exist in the array. Provided for use
-%% by bisect_server.
-cas(B, K, OldV, V) ->
-    case find(B, K) of
-        OldV ->
-            insert(B, K, V);
-        _OtherV ->
-            error(badarg)
-    end.
-
-
--spec find(bindict(), key()) -> value() | not_found.
-%% @doc: Returns the value associated with the key or 'not_found' if
-%% there is no such key.
-find(B, K) ->
-    case at(B, index(B, K)) of
-        {K, Value}   -> Value;
-        {_OtherK, _} -> not_found;
-        not_found    -> not_found
-    end.
-
--spec find_many(bindict(), [key()]) -> [value() | not_found].
-find_many(B, Keys) ->
-    lists:map(fun (K) -> find(B, K) end, Keys).
-
 -spec delete(bindict(), key()) -> bindict().
 delete(B, K) ->
     LeftOffset = index2offset(B, index(B, K)),
@@ -355,11 +279,6 @@ next_nth(B, K, Steps) ->
 first(B) ->
     at(B, 0).
 
--spec last(bindict()) -> {key(), value()} | not_found.
-%% @doc: Returns the last key-value pair or 'not_found' if the dict is empty
-last(B) ->
-    at(B, num_keys(B) - 1).
-
 -spec foldl(bindict(), fun(), any()) -> any().
 foldl(B, F, Acc) ->
     case first(B) of
@@ -377,145 +296,9 @@ do_foldl(B, F, PrevKey, Acc) ->
             Acc
     end.
 
-%% @doc: Compacts the internal binary used for storage, by creating a
-%% new copy where all the data is aligned in memory. Writes will cause
-%% fragmentation.
-compact(B) ->
-    B#bindict{b = binary:copy(B#bindict.b)}.
-
-%% @doc: Returns how many bytes would be used by the structure if it
-%% was storing NumKeys.
-expected_size(B, NumKeys) ->
-    B#bindict.block_size * NumKeys.
-
-expected_size_mb(B, NumKeys) ->
-    expected_size(B, NumKeys) / 1024 / 1024.
-
--spec num_keys(bindict()) -> integer().
-%% @doc: Returns the number of keys in the dictionary
-num_keys(B) ->
-    byte_size(B#bindict.b) div B#bindict.block_size.
-
 size(#bindict{b = B}) ->
     erlang:byte_size(B).
 
-
--spec serialize(bindict()) -> binary().
-%% @doc: Returns a binary representation of the dictionary which can
-%% be deserialized later to recreate the same structure.
-serialize(#bindict{} = B) ->
-    term_to_binary(B).
-
--spec deserialize(binary()) -> bindict().
-deserialize(Bin) ->
-    case binary_to_term(Bin) of
-        #bindict{} = B ->
-            B;
-        _ ->
-            erlang:error(badarg)
-    end.
-
-%% @doc: Insert a batch of key-value pairs into the dictionary. A new
-%% binary is only created once, making it much cheaper than individual
-%% calls to insert/2. The input list must be sorted.
-bulk_insert(#bindict{} = B, Orddict) ->
-    L = do_bulk_insert(B, B#bindict.b, [], Orddict),
-    B#bindict{b = iolist_to_binary(lists:reverse(L))}.
-
-do_bulk_insert(_B, Bin, Acc, []) ->
-    [Bin | Acc];
-do_bulk_insert(B, Bin, Acc, [{Key, Value} | Rest]) ->
-    {Left, Right} = split_at(Bin, B#bindict.key_size, B#bindict.value_size, Key, 0),
-    do_bulk_insert(B, Right, [Value, Key, Left | Acc], Rest).
-
-split_at(Bin, KeySize, ValueSize, Key, I) ->
-    LeftOffset = I * (KeySize + ValueSize),
-    case Bin of
-        Bin when byte_size(Bin) < LeftOffset ->
-            {Bin, <<>>};
-
-        <<Left:LeftOffset/binary,
-          Key:KeySize/binary, _:ValueSize/binary,
-          Right/binary>> ->
-            {Left, Right};
-
-        <<Left:LeftOffset/binary,
-          OtherKey:KeySize/binary, Value:ValueSize/binary,
-          Right/binary>> when OtherKey > Key ->
-            NewRight = <<OtherKey/binary, Value/binary, Right/binary>>,
-            {Left, NewRight};
-        _ ->
-            split_at(Bin, KeySize, ValueSize, Key, I+1)
-    end.
-
-merge(Small, Big) ->
-    Small#bindict.block_size =:= Big#bindict.block_size
-        orelse erlang:error(badarg),
-
-    L = do_merge(Small#bindict.b, Big#bindict.b, [],
-                 Big#bindict.key_size, Big#bindict.value_size),
-    Big#bindict{b = iolist_to_binary(L)}.
-
-do_merge(Small, Big, Acc, KeySize, ValueSize) ->
-    case Small of
-        <<Key:KeySize/binary, Value:ValueSize/binary, RestSmall/binary>> ->
-            {LeftBig, RightBig} = split_at(Big, KeySize, ValueSize, Key, 0),
-            do_merge(RestSmall, RightBig, [Value, Key, LeftBig | Acc],
-                     KeySize, ValueSize);
-        <<>> ->
-            lists:reverse([Big | Acc])
-    end.
-
-%% @doc: Intersect two or more bindicts by key. The resulting bindict
-%% contains keys found in all input bindicts.
-intersection(Bs) when length(Bs) >= 2 ->
-    intersection(Bs, svs);
-intersection(_TooFewSets) ->
-    erlang:error(badarg).
-
-%% @doc: SvS set intersection algorithm, as described in
-%% http://www.cs.toronto.edu/~tl/papers/fiats.pdf
-intersection(Bs, svs) ->
-    [CandidateSet | Sets] = lists:sort(fun (A, B) -> size(A) =< size(B) end, Bs),
-    from_orddict(new(CandidateSet#bindict.key_size,
-                     CandidateSet#bindict.value_size),
-                 do_svs(Sets, CandidateSet)).
-
-
-do_svs([], Candidates) ->
-    Candidates;
-do_svs([Set | Sets], #bindict{} = Candidates) ->
-    %% Optimization: we let the candidate set remain a bindict for the
-    %% first iteration to avoid creating a large orddict just to throw
-    %% most of it away. For the remainding sets, we keep the candidate
-    %% set as a list
-    {_, NewCandidatesList} =
-        foldl(Candidates,
-              fun (K, V, {L, Acc}) ->
-                      Size = byte_size(Set#bindict.b) div Set#bindict.block_size,
-                      Rank = index(Set, L, Size, K),
-                      %% TODO: Skip candidates until OtherK?
-                      case at(Set, Rank) of
-                          {K, _}       -> {Rank, [{K, V} | Acc]};
-                          {_OtherK, _} -> {Rank, Acc};
-                          not_found    -> {Rank, Acc}
-                      end
-              end, {0, []}),
-    do_svs(Sets, lists:reverse(NewCandidatesList));
-
-
-do_svs([Set | Sets], Candidates) when is_list(Candidates) ->
-    {_, NewCandidates} =
-        lists:foldl(fun ({K, V}, {L, Acc}) ->
-                            Size = byte_size(Set#bindict.b) div Set#bindict.block_size,
-                            Rank = index(Set, L, Size, K),
-                            case at(Set, Rank) of
-                                {K, _}       -> {Rank, [{K, V} | Acc]};
-                                {_OtherK, _} -> {Rank, Acc};
-                                not_found    -> {Rank, Acc}
-                            end
-                    end, {0, []}, Candidates),
-    do_svs(Sets, lists:reverse(NewCandidates)).
 
 at(B, I) ->
     Offset = index2offset(B, I),
@@ -527,28 +310,6 @@ at(B, I) ->
         _ ->
             not_found
     end.
-
-
-%% @doc: Populates the dictionary with data from the orddict, taking
-%% advantage of the fact that it is already ordered. The given bindict
-%% must be empty, but contain size parameters.
-from_orddict(#bindict{b = <<>>} = B, Orddict) ->
-    KeySize = B#bindict.key_size,
-    ValueSize = B#bindict.value_size,
-    L = orddict:fold(fun (K, V, Acc)
-                           when byte_size(K) =:= B#bindict.key_size andalso
-                                byte_size(V) =:= B#bindict.value_size ->
-                             [<<K:KeySize/binary, V:ValueSize/binary>> | Acc];
-                         (_, _, _) ->
-                             erlang:error(badarg)
-                     end, [], Orddict),
-    B#bindict{b = iolist_to_binary(lists:reverse(L))}.
-
-to_orddict(#bindict{} = B) ->
-    lists:reverse(
-      foldl(B, fun (Key, Value, Acc) ->
-                       [{Key, Value} | Acc]
-               end, [])).
 
 
 %%

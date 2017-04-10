@@ -21,7 +21,7 @@
 -export([
     start/2, stop/2,
     resolve/3,
-    reg/1,
+    reg/1, unreg/1,
     is_node_in_domains/2,
     gen_key/1,
     ping/1,
@@ -84,6 +84,7 @@ handle_call(workers_list, _F,S)        -> workers_list_(S);
 handle_call(workers_num, _F,S)         -> workers_num_(S);
 handle_call({req, Key, Opts, T}, F, S) -> req_(S, F, Key, Opts, T);
 handle_call({reg, Key, From, R},_F, S) -> reg_(S, Key, From, R);
+handle_call({unreg, Key, Pid},_F, S)   -> unreg_(S, Key, Pid);
 handle_call(Req, _F, S = #{out := O})  -> {reply, {err, unknown_command, ?p(Req)}, S, out_ttl(O, ?mnow)}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -200,15 +201,26 @@ reg_(S = #{out := Out, c := Childs}, Key, From, Reply) ->
       gen_server:cast(self(), {queue_manage_, Key}),
       case Reply of
         {ok, Pid} -> 
-          link(Pid),
-          {reply, ok, S#{out := NewOut, c := orddict:store(Key, Pid, Childs)}, 0};
-        _ELse     -> {reply, ok, S#{out := NewOut}, 0}
+          try 
+            link(Pid),
+            {reply, ok, S#{out := NewOut, c := orddict:store(Key, Pid, Childs)}, 0}
+          catch
+            _:_ -> {reply, ?e(link_worker_exeption), S, 0}
+          end;
+        _Else -> {reply, ok, S#{out := NewOut}, 0}
       end;
     _ ->
       gen_server:cast(self(), {queue_manage_, Key}),
       {reply, ?e(empty_queue_or_start_process_timeout), S, 0}
   end.
 
+
+%% TODO unreg by Key only
+unreg(#{domain := DomainPid, key := Key, pid := Pid}) ->
+  gen_server:call(DomainPid, {unreg, Key, Pid}).
+unreg_(S = #{c := Childs}, Key, Pid) ->
+  try unlink(Pid) catch _:_ -> do_nothing end,
+  {reply, ok, S#{c := orddict:erase(Key, Childs)}, 0}.
 
 
 

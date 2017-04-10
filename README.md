@@ -1,7 +1,7 @@
 ecldb
 =====
 
-Erlang claster process-value data base
+Erlang cluster process-value data base
 
 Build
 -----

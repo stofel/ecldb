@@ -110,7 +110,7 @@ init(_Args = #{
   File = Path ++ atom_to_list(Name),
 
   FileLoadRes = case New of 
-    true ->
+    false ->
       case code:load_abs(File) of
         {module, Name} -> ok;
         Else -> ?e(start_cluster_error, Else)
@@ -122,7 +122,7 @@ init(_Args = #{
           ?INF("Try start result", Else),
           new_cluster_file(Name, File)
       end;
-    false -> new_cluster_file(Name, File)
+    true -> new_cluster_file(Name, File)
   end,
 
   case FileLoadRes of
