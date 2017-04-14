@@ -12,7 +12,7 @@ Build
 Usage
 -----
 
-    %% Example of start cluster for two nodes and with ten domains on each
+    %% Example of start cluster for two nodes with ten domains on each
     %% Worker process start with gen_server:start(test_session, Args, [])
     start_cluster() ->
         CName = ecldb_test,
