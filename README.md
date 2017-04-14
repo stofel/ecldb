@@ -14,7 +14,7 @@ Usage
 
     %% Example of start cluster for two nodes and with ten domains on each
     %% Worker process start with gen_server:start(test_session, Args, [])
-    start_player_sluster() ->
+    start_cluster() ->
         CName = ecldb_test,
         Args = #{
           new  => do_try, %% true|false|do_try Start or not new cluster. 
