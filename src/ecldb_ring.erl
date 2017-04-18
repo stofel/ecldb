@@ -17,7 +17,8 @@
     list_domains/1,
     list_nodes/1,
 
-    route/3,
+    route/2, route/3,
+    %route_first/2, route_second/2, route_thrid/2, %% TODO
     r/2, r/3
   ]).
 
@@ -112,6 +113,9 @@ r(A, B, C) -> {A, B, C}.
 -define(ZERO_HASH, <<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>).
 
 % Module = ClusterName
+route(Module, Key) ->
+  route(Module, Module:mode(), ecldb_misc:md5_hex(Key)).
+  
 route(Module, norma, KeyHash) -> 
   case get_domain(Module, first, KeyHash) of
     {ok, Domain} -> {norma, Domain};

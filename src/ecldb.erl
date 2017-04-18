@@ -56,6 +56,7 @@
     show_first/1, show_second/1, show_third/1,
 
     % Main resolve function
+    route/0, route/2,
     call/4,
     cursor/3,
 
@@ -172,7 +173,14 @@ norma(ClusterName) ->
   ok.
 
 
-
+route() -> <<"Usage: ecldb:route(ClusterName, Key), ecldb:list_clusters()">>.
+route(_C, Key) when not is_binary(Key) ->
+  ?e(key_not_binary);
+route(C, Key) ->
+  case lists:member(C, ecldb:list_clusters()) of
+    true  -> ecldb_ring:route(C, Key);
+    false -> ?e(no_such_cluster)
+  end.
 
 
 
@@ -182,8 +190,7 @@ norma(ClusterName) ->
 %%  temp - for temporary process manage
 %%
 call(C, Key, Msg, Opts) ->
-  KeyHash = ecldb_misc:md5_hex(Key),
-  Route = ecldb_ring:route(C, C:mode(), KeyHash),
+  Route = ecldb_ring:route(C, Key),
   %?INF("Route", Route),
   case ecldb_domain:resolve(Key, Route, Opts) of
     {ok, Pid} -> gen_server:call(Pid, Msg);
