@@ -30,7 +30,8 @@
 -export([
     state/1,
     ping/2,
-    commit/1,
+    start_type/1,
+    commit/1, save/1,
     add_domain_to_third_ring/3, del_domain_from_third_ring/3,
     show_first/1, show_second/1, show_third/1,
     sync_to/2, sync_to_all/1,
@@ -52,6 +53,7 @@ handle_cast(Req, S)             -> ?INF("unknown_msg", Req), {noreply, S}.
 
 %% calls
 handle_call(ping,_F,S)               -> {reply, pong, S};
+handle_call(start_type,_F,S)         -> {reply, maps:get(stype, S), S};
 % Dict calls
 %[show_nodes/1,   add_node/2,   del_node/2,   flush_node/2,   flush_nodes/1]).
 %[show_domains/1, add_domain/2, del_domain/2, flush_domain/2, flush_domains/1]).
@@ -81,6 +83,7 @@ handle_call({reg_domain,   D, N}, _F, S)  -> reg_domain_                 (S, D, 
 handle_call({unreg_domain, D, N}, _F, S)  -> unreg_domain_               (S, D, N);
 % Commit                                 
 handle_call(commit,_F,S)                  -> commit_                     (S);
+handle_call(save,_F,S)                    -> save_                       (S);
 
 handle_call(ets, _F,S = #{ets := Ets})    -> {reply, {ok, Ets}, S};
 
@@ -107,33 +110,37 @@ init(_Args = #{
     ],
 
   true = ets:insert(EtsName, Confs),
-  File = Path ++ atom_to_list(Name),
+
+  {NodeDir, _} = lists:splitwith(fun(C) -> C /= $@ end, atom_to_list(node())),
+  File = lists:append([Path ++ "/" ++ NodeDir ++ "/" ++ atom_to_list(Name)]),
 
   FileLoadRes = case New of 
     false ->
       case code:load_abs(File) of
-        {module, Name} -> ok;
+        {module, Name} -> loaded;
         Else -> ?e(start_cluster_error, Else)
       end;
     do_try ->
       case code:load_abs(File) of
-        {module, Name} -> ok;
+        {module, Name} -> loaded;
         Else -> 
           ?INF("Try start result", Else),
-          new_cluster_file(Name, File)
+          new_cluster(Name)
       end;
-    true -> new_cluster_file(Name, File)
+    true -> new_cluster(Name)
   end,
 
   case FileLoadRes of
-    ok ->
+    StartType when StartType == created; StartType == loaded ->
       S = #{
         name    => Name,
-        ets     => EtsName,  %% ets table name
+        stype   => StartType,
+        ets     => EtsName,          %% ets table name
+        file    => File,             %% Path to module
         ring    => ecldb_ring:new(), %% thrid ring
-        domains => {[], []}, %% domains {AddDomain, DelDomains}.
-        nodes   => {[], []}, %% Cluster nodes [{add, Node}, {del, Node}].
-        log     => []        %% messages from other nodes
+        domains => {[], []},         %% domains {AddDomain, DelDomains}.
+        nodes   => {[], []},         %% Cluster nodes [{add, Node}, {del, Node}].
+        log     => []                %% messages from other nodes
       },
       process_flag(trap_exit, true),
       {ok, S};
@@ -142,7 +149,7 @@ init(_Args = #{
   end.
 
 %
-new_cluster_file(Name, File) ->
+new_cluster(Name) ->
   FunList = [
     {mode,    norma},
     {first,   ecldb_ring:new()},
@@ -151,12 +158,12 @@ new_cluster_file(Name, File) ->
     {nodes,   []},
     {rev,     ecldb_misc:rev()}
   ],
-  case ecldb_compile:c(Name, File, FunList) of
-    {ok, Name} -> ok;
+  case ecldb_compile:c(Name, none, FunList) of
+    ok -> created;
     Else -> Else
   end.
 
-
+%ecldb_compile:c(Name, lists:append(File, ".beam"), FunList)
 
 %
 terminate(Reason, #{name := Name}) ->
@@ -178,8 +185,29 @@ ping(Name, Node) ->
     false -> try gen_server:call({Name, Node}, ping) catch _E:_R -> pang end
   end.
 
+start_type(Name) ->
+  gen_server:call(Name, start_type). 
+
 state(Name) ->
   gen_server:call(Name, state).
+
+
+save(Name) ->
+  gen_server:call(Name, save).
+save_(S = #{name := Name, file := File}) ->
+  FunList = [
+      {mode,    Name:mode()},
+      {first,   Name:first()},
+      {second,  Name:second()},
+      {domains, Name:domains()},
+      {nodes,   Name:nodes()},
+      {rev,     Name:rev()}
+    ],
+  ecldb_compile:c(Name, lists:append(File, ".beam"), FunList),
+  {reply, ok, S}.
+
+
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
