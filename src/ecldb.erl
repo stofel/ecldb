@@ -87,7 +87,16 @@ start_cluster() ->
 -spec start_cluster(C::atom(), Args::map()) -> {ok, created}|{ok, loaded}|err().
 start_cluster(C, Args) -> 
   case ecldb_sup:start_cluster(C, Args) of
-    {ok, _Pid} -> {ok, ecldb_cluster:start_type(C)};
+    {ok, _Pid} -> 
+      StartType = ecldb_cluster:start_type(C),
+      case StartType of
+        loaded ->
+          Ds = maps:values(C:domains()),
+          Node = node(),
+          [ecldb_domain:start(C, D) || D = #{node := N} <- Ds, N == Node];
+        _Else -> do_nothing
+      end,
+      {ok, StartType};
     Else -> Else
   end.
 
