@@ -118,13 +118,13 @@ route(Module, Key) ->
   
 route(Module, norma, KeyHash) -> 
   case get_domain(Module, first, KeyHash) of
-    {ok, Domain} -> {norma, Domain};
+    {ok, Domain} -> {ok, {norma, Domain}};
     Else         -> Else
   end;
 route(Module, Mode,  KeyHash) -> 
   case [get_domain(Module, Ring, KeyHash) || Ring <- [first, second]] of
-    [{ok,V1}, {ok,V2}] when V1 == V2 -> {norma, V1};
-    [{ok,V1}, {ok,V2}]               -> {Mode, V1, V2};
+    [{ok,V1}, {ok,V2}] when V1 == V2 -> {ok, {norma, V1}};
+    [{ok,V1}, {ok,V2}]               -> {ok, {Mode, V1, V2}};
     Else                             -> ?e(cluster_rings_error, ?p(Else))
   end.
 

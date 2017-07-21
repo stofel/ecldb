@@ -207,10 +207,13 @@ route(C, Key) ->
 %%  temp - for temporary process manage
 %%
 call(C, Key, Msg, Opts) ->
-  Route = ecldb_ring:route(C, Key),
-  %?INF("Route", Route),
-  case ecldb_domain:resolve(Key, Route, Opts) of
-    {ok, Pid} -> gen_server:call(Pid, Msg);
+  case ecldb_ring:route(C, Key) of
+    {ok, Route} ->
+      %?INF("Route", Route),
+      case ecldb_domain:resolve(Key, Route, Opts) of
+        {ok, Pid} -> gen_server:call(Pid, Msg);
+        Else -> Else
+      end;
     Else -> Else
   end.
 

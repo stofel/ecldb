@@ -176,6 +176,7 @@ resolve(Key, {merge, DOld, DNew}, Opts = #{mode := _}) ->
 %%
 %% Wrong args
 resolve(Key, Args, Opts) -> 
+  ?INF("resolve", {Key, Args, Opts}),
   ?e(wrong_args, {Key, Args, Opts}).
 
 
