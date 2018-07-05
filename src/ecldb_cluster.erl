@@ -204,8 +204,9 @@ save_(S = #{name := Name, file := File}) ->
       {nodes,   Name:nodes()},
       {rev,     Name:rev()}
     ],
-  ecldb_compile:c(Name, lists:append(File, ".beam"), FunList),
-  {reply, ok, S}.
+  ?INF("ecldb_save", #{file => lists:append(File, ".beam")}),
+  Res = ecldb_compile:c(Name, lists:append(File, ".beam"), FunList),
+  {reply, Res, S}.
 
 
 
