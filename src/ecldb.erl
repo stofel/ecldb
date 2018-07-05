@@ -45,14 +45,14 @@
 -export([
 
     %% Manage
-    start_cluster/2, start_cluster/0, stop_cluster/1,  save/1, list_clusters/0,
+    start_cluster/2, start_cluster/0, stop_cluster/1, save/1, list_clusters/0,
     add_node/2,   del_node/2,
     add_domain/2, unreg_domain/2, stop_domain/2,
     flush_changes/1,
     merge/1, norma/1,
 
     % Show
-    cluster_stat/1,
+    list/0, stat/0, stat/1, stat/2,
     show_first/1, show_second/1, show_third/1,
 
     % Main resolve function
@@ -109,6 +109,7 @@ save(C) ->
   ecldb_cluster:save(C).
 
 %
+list() -> list_clusters().
 list_clusters() ->
   [N || {N,_,_,_} <- supervisor:which_children(ecldb_sup)].
 
@@ -117,12 +118,20 @@ show_first(ClusterName)  -> ecldb_cluster:show_first(ClusterName).
 show_second(ClusterName) -> ecldb_cluster:show_second(ClusterName).
 show_third(ClusterName)  -> ecldb_cluster:show_third(ClusterName).
 
+
 %
-cluster_stat(ClusterName) ->
+stat() -> "Usage: stat(ClusterName) -> Stat, stat(ClusterName, Type) -> Stat\nType = domains".
+
+stat(ClusterName) ->
   #{domains => maps:size(ClusterName:domains()),
     nodes   => length(ClusterName:nodes()),
     workers => lists:sum([ecldb_domain:workers_num(D) || D <- maps:values(ClusterName:domains())])
   }.
+
+
+stat(ClusterName, domains) ->
+  ClusterName:domains();
+stat(_, _) -> stat().
 
 
 %%
