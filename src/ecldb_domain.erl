@@ -306,7 +306,11 @@ start_spawn(Key, Opts, RegArgs = #{ets := Ets}) ->
       try 
         case ets:lookup(Ets, ma) of
           [{ma, {M,A}}] -> 
-            gen_server:start(M, A#{key => Key, opts => Opts, reg => RegArgs}, []);
+            case gen_server:start(M, A#{key => Key, opts => Opts, reg => RegArgs}, []) of
+              {ok, Pid}   -> {ok, Pid};
+              ignore      -> reg(RegArgs#{reply => ignore});
+              {error, Er} -> reg(RegArgs#{reply => Er})
+            end;
           _ -> 
             reg(RegArgs#{reply => ?e(ma_not_found)})
         end
