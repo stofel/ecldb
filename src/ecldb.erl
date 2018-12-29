@@ -45,17 +45,18 @@
 -export([
 
     %% Manage
-    start_cluster/2, start_cluster/0, stop_cluster/1, list_clusters/0,
+    start_cluster/2, start_cluster/0, stop_cluster/1, save/1, list_clusters/0,
     add_node/2,   del_node/2,
     add_domain/2, unreg_domain/2, stop_domain/2,
     flush_changes/1,
     merge/1, norma/1,
 
     % Show
-    cluster_stat/1,
+    list/0, stat/0, stat/1, stat/2,
     show_first/1, show_second/1, show_third/1,
 
     % Main resolve function
+    route/0, route/2,
     call/4,
     cursor/3,
 
@@ -83,14 +84,32 @@ start_cluster() ->
   <<"Usage: start_cluster(ClusterName, Args). see README.md">>.
 
 %
+-spec start_cluster(C::atom(), Args::map()) -> {ok, created}|{ok, loaded}|err().
 start_cluster(C, Args) -> 
-  ecldb_sup:start_cluster(C, Args).
+  case ecldb_sup:start_cluster(C, Args) of
+    {ok, _Pid} -> 
+      StartType = ecldb_cluster:start_type(C),
+      case StartType of
+        loaded ->
+          Ds = maps:values(C:domains()),
+          Node = node(),
+          [ecldb_domain:start(C, D) || D = #{node := N} <- Ds, N == Node];
+        _Else -> do_nothing
+      end,
+      {ok, StartType};
+    Else -> Else
+  end.
 
 %
 stop_cluster(C) ->
   ecldb_sup:stop_cluster(C).
 
 %
+save(C) ->
+  ecldb_cluster:save(C).
+
+%
+list() -> list_clusters().
 list_clusters() ->
   [N || {N,_,_,_} <- supervisor:which_children(ecldb_sup)].
 
@@ -99,12 +118,20 @@ show_first(ClusterName)  -> ecldb_cluster:show_first(ClusterName).
 show_second(ClusterName) -> ecldb_cluster:show_second(ClusterName).
 show_third(ClusterName)  -> ecldb_cluster:show_third(ClusterName).
 
+
 %
-cluster_stat(ClusterName) ->
+stat() -> "Usage: stat(ClusterName) -> Stat, stat(ClusterName, Type) -> Stat\nType = domains".
+
+stat(ClusterName) ->
   #{domains => maps:size(ClusterName:domains()),
     nodes   => length(ClusterName:nodes()),
     workers => lists:sum([ecldb_domain:workers_num(D) || D <- maps:values(ClusterName:domains())])
   }.
+
+
+stat(ClusterName, domains) ->
+  ClusterName:domains();
+stat(_, _) -> stat().
 
 
 %%
@@ -172,7 +199,14 @@ norma(ClusterName) ->
   ok.
 
 
-
+route() -> <<"Usage: ecldb:route(ClusterName, Key), ecldb:list_clusters()">>.
+route(_C, Key) when not is_binary(Key) ->
+  ?e(key_not_binary);
+route(C, Key) ->
+  case lists:member(C, ecldb:list_clusters()) of
+    true  -> ecldb_ring:route(C, Key);
+    false -> ?e(no_such_cluster)
+  end.
 
 
 
@@ -182,11 +216,13 @@ norma(ClusterName) ->
 %%  temp - for temporary process manage
 %%
 call(C, Key, Msg, Opts) ->
-  KeyHash = ecldb_misc:md5_hex(Key),
-  Route = ecldb_ring:route(C, C:mode(), KeyHash),
-  %?INF("Route", Route),
-  case ecldb_domain:resolve(Key, Route, Opts) of
-    {ok, Pid} -> gen_server:call(Pid, Msg);
+  case ecldb_ring:route(C, Key) of
+    {ok, Route} ->
+      %?INF("Route", Route),
+      case ecldb_domain:resolve(Key, Route, Opts) of
+        {ok, Pid} -> gen_server:call(Pid, Msg);
+        Else -> Else
+      end;
     Else -> Else
   end.
 
