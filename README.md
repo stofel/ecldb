@@ -6,7 +6,7 @@ Erlang cluster process-value data base
 Build
 -----
 
-    Add https://github.com/zimad/ecldb.git to deps in your release.
+    Add https://github.com/stofel/ecldb.git to deps in your release.
     Add ecldb in you_project.app.src in applications section.
     
 Usage
