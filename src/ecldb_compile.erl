@@ -75,10 +75,11 @@ c(ModuleName, Path, FunList) ->
   {ok, Mod, Bin} = compile:forms([ModuleForm, ExportForm, RouteForm] ++ DataForms),
 
   {module, ModuleName} = code:load_binary(Mod, [], Bin),
-  case Path /= none of
+  _Res = case Path /= none of
     true  -> file:write_file(Path, Bin);
     false -> do_nothing
   end,
+  %?INF("Create beams result", _Res),
   %% }}}
 
   ok.

@@ -124,10 +124,10 @@ init(_Args = #{
       case code:load_abs(File) of
         {module, Name} -> loaded;
         Else -> 
-          ?INF("Try start result", Else),
-          new_cluster(Name)
+          ?INF("Try start result", {File, Else}),
+          new_cluster(Name, File)
       end;
-    true -> new_cluster(Name)
+    true -> new_cluster(Name, File)
   end,
 
   case FileLoadRes of
@@ -149,7 +149,7 @@ init(_Args = #{
   end.
 
 %
-new_cluster(Name) ->
+new_cluster(Name, File) ->
   FunList = [
     {mode,    norma},
     {first,   ecldb_ring:new()},
@@ -158,12 +158,12 @@ new_cluster(Name) ->
     {nodes,   []},
     {rev,     ecldb_misc:rev()}
   ],
-  case ecldb_compile:c(Name, none, FunList) of
+ %case ecldb_compile:c(Name, none, FunList) of
+  case ecldb_compile:c(Name, lists:append(File, ".beam"), FunList) of
     ok -> created;
     Else -> Else
   end.
 
-%ecldb_compile:c(Name, lists:append(File, ".beam"), FunList)
 
 %
 terminate(Reason, #{name := Name}) ->
