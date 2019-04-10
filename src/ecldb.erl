@@ -67,6 +67,8 @@
 
 -include("../include/ecldb.hrl").
 
+-define(DEFAULT_KEYS_NUM, 8).
+
 -export_type([err/0]).
 
 
@@ -149,7 +151,7 @@ del_node(ClusterName, Node) ->
 
 
 add_domain(ClusterName, DomainName) -> 
-  add_domain(ClusterName, DomainName, 32).
+  add_domain(ClusterName, DomainName, ?DEFAULT_KEYS_NUM).
 add_domain(ClusterName, DomainName, N) ->
   ok = ecldb_domain:start(ClusterName, DomainName),
   ok = ecldb_dicts:add_domain(ClusterName, DomainName),
@@ -162,7 +164,7 @@ add_domain(ClusterName, DomainName, N) ->
 
 
 unreg_domain(ClusterName, DomainName) ->
-  unreg_domain(ClusterName, DomainName, 32).
+  unreg_domain(ClusterName, DomainName, ?DEFAULT_KEYS_NUM).
 unreg_domain(ClusterName, DomainName, N) ->
   ok = ecldb_cluster:copy_third_from_second(ClusterName),
   {ok, NewN} = ecldb_cluster:del_domain_from_third_ring(ClusterName, DomainName, N),
