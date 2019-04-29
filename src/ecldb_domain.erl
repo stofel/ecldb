@@ -93,6 +93,8 @@ handle_call(Req, _F, S = #{out := O})  -> {reply, {err, unknown_command, ?p(Req)
 init(#{name := Name, cluster := ClusterName}) ->
   {ok, ClusterSrvPid} = ecldb:get_srv_pid(ClusterName),
   {ok, Ets}           = gen_server:call(ClusterSrvPid, ets),
+  EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+  EtsName = ets:new(EtsName, [named_table, {read_concurrency,true}]),
   S = #{
     name    => Name,
     cluster => ClusterName,
@@ -113,20 +115,27 @@ state(DomainName) ->
 
 workers_list(#{name := Name, node := Node}) ->
   gen_server:call({Name, Node}, workers_list).
-workers_list_(S = #{out := O, c := Childs}) ->
-  {reply, Childs, S, out_ttl(O, ?mnow)}.
+%workers_list_(S = #{out := O, c := Childs}) ->
+workers_list_(S = #{name := Name, out := O}) ->
+  EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+  {reply, ets:tab2list(EtsName), S, out_ttl(O, ?mnow)}.
   
 %%
 workers_num(#{name := Name, node := Node}) ->
   gen_server:call({Name, Node}, workers_num).
-workers_num_(S = #{out := O, c := Childs}) ->
-  {reply, length(Childs), S, out_ttl(O, ?mnow)}.
+%workers_num_(S = #{out := O, c := Childs}) ->
+workers_num_(S = #{name := Name, out := O}) ->
+  EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+  %{reply, length(Childs), S, out_ttl(O, ?mnow)}.
+  {reply, ets:info(EtsName, size), S, out_ttl(O, ?mnow)}.
 
 
-% If child stops
-exit_signal(S = #{c := Childs, out := Out}, Pid, _Reason) ->
+%% If child stops
+exit_signal(S = #{name := Name, out := Out}, Pid, _Reason) ->
   ?INF("Exit", {Pid, _Reason}),
-  {noreply, S#{c := lists:keydelete(Pid, 2, Childs)}, out_ttl(Out, ?mnow)}.
+  EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+  ets:match_delete(EtsName, {'_', Pid}),
+  {noreply, S, out_ttl(Out, ?mnow)}.
 
 
 timeout(S = #{out := Out}) ->
@@ -159,7 +168,15 @@ timeout(S = #{out := Out}) ->
 %% Norma resolve by main domain
 resolve(Key, {norma, D}, Opts = #{mode := _}) -> 
   #{name := Name, node := Node} = D,
-  gen_server:call({Name, Node}, {req, Key, Opts, norma});
+  case Node == node() of
+    true ->
+      EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+      case ets:lookup(EtsName, Key) of
+        [{Key, Pid}] -> {ok, Pid};
+        _ -> gen_server:call({Name, Node}, {req, Key, Opts, norma})
+      end; 
+    false -> gen_server:call({Name, Node}, {req, Key, Opts, norma})
+  end;
 
 %%
 %% Proxy resolve by new domain (DNew)
@@ -195,7 +212,7 @@ reg(#{domain := Domain, key := Key, from := From, reply := ok}) ->
   gen_server:call(Domain, {reg, Key, From, {ok, self()}});
 reg(#{domain := Domain, key := Key, from := From, reply := Reply}) ->
   gen_server:call(Domain, {reg, Key, From, Reply}).
-reg_(S = #{out := Out, c := Childs}, Key, From, Reply) ->
+reg_(S = #{name := Name, out := Out}, Key, From, Reply) ->
   case lists:keytake(From, 2, Out) of
     {value, {_Until, From}, NewOut} -> 
       gen_server:reply(From, Reply),
@@ -204,7 +221,9 @@ reg_(S = #{out := Out, c := Childs}, Key, From, Reply) ->
         {ok, Pid} -> 
           try 
             link(Pid),
-            {reply, ok, S#{out := NewOut, c := orddict:store(Key, Pid, Childs)}, 0}
+            EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+            ets:insert(EtsName, [{Key, Pid}]),
+            {reply, ok, S#{out := NewOut}, 0}
           catch
             _:_ -> {reply, ?e(link_worker_exeption), S, 0}
           end;
@@ -219,15 +238,17 @@ reg_(S = #{out := Out, c := Childs}, Key, From, Reply) ->
 %% TODO unreg by Key only
 unreg(#{domain := DomainPid, key := Key, pid := Pid}) ->
   gen_server:call(DomainPid, {unreg, Key, Pid}).
-unreg_(S = #{c := Childs}, Key, Pid) ->
+unreg_(S = #{name := Name}, Key, Pid) ->
   try unlink(Pid) catch _:_ -> do_nothing end,
-  {reply, ok, S#{c := orddict:erase(Key, Childs)}, 0}.
+  EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+  ets:delete(EtsName, Key),
+  {reply, ok, S, 0}.
 
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% QUEUE MANAGE {{{
-queue_manage_(S = #{ets := Ets, c := Childs, q := Qs, out := Out}, Key) ->
+queue_manage_(S = #{name := Name, ets := Ets, q := Qs, out := Out}, Key) ->
   Now = ?mnow,
   OutFun = 
     fun(Opts, From) -> 
@@ -242,20 +263,22 @@ queue_manage_(S = #{ets := Ets, c := Childs, q := Qs, out := Out}, Key) ->
 
         %% NORMA MANAGE
         {{value, #{from := From, type := norma, opts := #{mode := info} }}, NewQ} -> 
-          case orddict:find(Key, Childs) of
-            {ok, Pid} -> 
-              gen_server:reply(From, {ok, Pid}), 
+          EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+          case ets:lookup(EtsName, Key) of
+            [{Key, Pid}] -> 
+              gen_server:reply(From, {ok, Pid}),
               queue_manage_(S#{q := Qs#{Key := NewQ}}, Key);
-            error -> 
+            [] ->
               gen_server:reply(From, not_started),
               queue_manage_(S#{q := Qs#{Key := NewQ}}, Key)
           end;
         {{value, #{from := From, type := norma, opts := Opts}}, NewQ} -> 
-          case orddict:find(Key, Childs) of
-            {ok, Pid} -> 
-              gen_server:reply(From, {ok, Pid}), 
+          EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+          case ets:lookup(EtsName, Key) of
+            [{Key, Pid}] -> 
+              gen_server:reply(From, {ok, Pid}),
               queue_manage_(S#{q := Qs#{Key := NewQ}}, Key);
-            error     ->
+            [] ->
               RegArgs = #{domain => self(), ets => Ets, from => From, key => Key},
               start_spawn(Key, Opts, RegArgs),
               {NewOut, Ttl} = OutFun(Opts, From),
@@ -264,11 +287,12 @@ queue_manage_(S = #{ets := Ets, c := Childs, q := Qs, out := Out}, Key) ->
 
         %% PROXY MANAGE
         {{value, #{from := From, type := {proxy, D}, opts := Opts}}, NewQ} -> 
-          case orddict:find(Key, Childs) of
-            {ok, Pid} -> 
-              gen_server:reply(From, {ok, Pid}), 
+          EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+          case ets:lookup(EtsName, Key) of
+            [{Key, Pid}] -> 
+              gen_server:reply(From, {ok, Pid}),
               queue_manage_(S#{q := Qs#{Key := NewQ}}, Key);
-            error     ->
+            [] ->
               #{name := Name, node := Node} = D,
               gen_server:cast({Name, Node}, {req, Key, Opts, From, norma}),
               {noreply, S#{q := Qs#{Key := NewQ}}, out_ttl(Out, Now)}
@@ -276,11 +300,12 @@ queue_manage_(S = #{ets := Ets, c := Childs, q := Qs, out := Out}, Key) ->
 
         %% MERGE MANAGE
         {{value, #{from := From, type := {merge, D}, opts := Opts}}, NewQ} -> 
-          case orddict:find(Key, Childs) of
-            {ok, Pid} -> 
+          EtsName = list_to_atom(atom_to_list(Name) ++ "_ets"),
+          case ets:lookup(EtsName, Key) of
+            [{Key, Pid}] -> 
               gen_server:reply(From, {ok, Pid}), 
               queue_manage_(S#{q := Qs#{Key := NewQ}}, Key);
-            error     ->
+            [] ->
               RegArgs = #{domain => self(), ets => Ets, from => From, key => Key},
               merge_spawn(Key, Opts, D, RegArgs),
               {NewOut, Ttl} = OutFun(Opts, From),
