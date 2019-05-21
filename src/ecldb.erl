@@ -57,7 +57,7 @@
 
     % Main resolve function
     route/0, route/2,
-    call/4,
+    call/4, call/5,
     cursor/3,
 
     % Misc 
@@ -218,11 +218,13 @@ route(C, Key) ->
 %%  temp - for temporary process manage
 %%
 call(C, Key, Msg, Opts) ->
+  call(C, Key, Msg, Opts, 5000).
+call(C, Key, Msg, Opts, Timeout) ->
   case ecldb_ring:route(C, Key) of
     {ok, Route} ->
       %?INF("Route", Route),
       case ecldb_domain:resolve(Key, Route, Opts) of
-        {ok, Pid} -> gen_server:call(Pid, Msg);
+        {ok, Pid} -> gen_server:call(Pid, Msg, Timeout);
         Else -> Else
       end;
     Else -> Else
