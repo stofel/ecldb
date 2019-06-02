@@ -58,6 +58,7 @@
     % Main resolve function
     route/0, route/2,
     call/4, call/5,
+    cast/4,
     cursor/3,
 
     % Misc 
@@ -216,7 +217,7 @@ route(C, Key) ->
 %% Opts = #{mode => Mode}, 
 %% Mode = info|start|init|temp
 %%  temp - for temporary process manage
-%%
+%% TODO -spec
 call(C, Key, Msg, Opts) ->
   call(C, Key, Msg, Opts, 5000).
 call(C, Key, Msg, Opts, Timeout) ->
@@ -225,6 +226,22 @@ call(C, Key, Msg, Opts, Timeout) ->
       %?INF("Route", Route),
       case ecldb_domain:resolve(Key, Route, Opts) of
         {ok, Pid} -> gen_server:call(Pid, Msg, Timeout);
+        Else -> Else
+      end;
+    Else -> Else
+  end.
+
+
+%% Opts = #{mode => Mode}, 
+%% Mode = info|start|init|temp
+%%  temp - for temporary process manage
+%% TODO -spec
+cast(C, Key, Msg, Opts) ->
+  case ecldb_ring:route(C, Key) of
+    {ok, Route} ->
+      %?INF("Route", Route),
+      case ecldb_domain:resolve(Key, Route, Opts) of
+        {ok, Pid} -> gen_server:cast(Pid, Msg);
         Else -> Else
       end;
     Else -> Else
