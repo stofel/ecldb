@@ -57,6 +57,7 @@
 
     % Main resolve function
     route/0, route/2,
+    get_pid/2, get_pid/3,
     call/4, call/5,
     cast/4,
     cursor/3,
@@ -64,6 +65,7 @@
     % Misc 
     get_srv_pid/1, get_sup_pid/1
   ]).
+
 
 
 -include("../include/ecldb.hrl").
@@ -212,6 +214,18 @@ route(C, Key) ->
   end.
 
 
+
+%% get worker pid                                                           
+get_pid(C, Key) ->                                                            
+  get_pid(C, Key, #{mode => info}).                                            
+%% Opts = #{mode => Mode},                                                  
+%% Mode = info|start|init|temp                                                 
+%%  temp - for temporary process manage                                        
+get_pid(C, Key, Opts) ->                                                                                                                                                      
+  case ecldb_ring:route(C, Key) of                                                 
+    {ok, Route} -> ecldb_domain:resolve(Key, Route, Opts);                     
+    Else -> Else                                                             
+  end.                                                               
 
 
 %% Opts = #{mode => Mode}, 
