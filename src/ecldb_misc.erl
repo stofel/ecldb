@@ -1,7 +1,10 @@
 -module(ecldb_misc).
 
 %
--compile(export_all).
+-export([random_bin/1, random_str/1, random_int/1, random_int/2]).
+-export([rev/0, rev/1]).
+-export([c_r/2]).
+-export([md5_hex/1, shuffle_list/1]).
 
 -include("../include/ecldb.hrl").
 

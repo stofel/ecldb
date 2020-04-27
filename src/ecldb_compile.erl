@@ -17,23 +17,7 @@
 
 -include("../include/ecldb.hrl").
 
--export([c/3, t/0]).
-
-t() ->
-  try
-    FunList = [
-      {mode,    norma},
-      {first,   ecldb_ring:new()},
-      {second,  ecldb_ring:new()},
-      {domains, []},
-      {nodes,   []},
-      {rev,     ecldb_misc:rev()}
-    ],
-    c(ecldb_test, none, FunList)
-
-  catch
-    _:_ -> erlang:display(erlang:get_stacktrace())
-  end.
+-export([c/3]).
 
 
 c(ModuleName, Path, FunList) ->
