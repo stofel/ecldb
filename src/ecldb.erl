@@ -45,7 +45,8 @@
 -export([
 
     %% Manage
-    start_cluster/2, start_cluster/0, stop_cluster/1, save/1, list_clusters/0,
+    start_cluster/3, start_cluster/2, start_cluster/0,
+    stop_cluster/1, save/1, list_clusters/0,
     add_node/2,   del_node/2,
     add_domain/2, unreg_domain/2, stop_domain/2,
     flush_changes/1,
@@ -91,7 +92,9 @@ start_cluster() ->
 %
 -spec start_cluster(C::atom(), Args::map()) -> {ok, created}|{ok, loaded}|err().
 start_cluster(C, Args) -> 
-  case ecldb_sup:start_cluster(C, Args) of
+  start_cluster(C, Args, 30000).
+start_cluster(C, Args, Timeout) ->
+  case ecldb_sup:start_cluster(C, Args, Timeout) of
     {ok, _Pid} -> 
       StartType = ecldb_cluster:start_type(C),
       case StartType of

@@ -107,7 +107,14 @@ init(#{name := Name, cluster := ClusterName}) ->
   {ok, S}.
 
 %
-terminate(_Reason, _S) -> 
+terminate(shutdown, _S) ->
+  %% Sync stop workers
+  {links, Workers} = erlang:process_info(self(), links),
+  [gen_server:stop(Worker) || Worker <- Workers],
+  ok;
+
+terminate(Reason, _S) ->
+  ?INF("Unexpected terminate", Reason),
   ok.
 
 state(DomainName) -> 

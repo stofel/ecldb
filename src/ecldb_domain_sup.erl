@@ -4,7 +4,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -21,8 +21,8 @@
 %% API functions
 %%====================================================================
 
-start_link() ->
-    supervisor:start_link(?MODULE, []).
+start_link(Timeout) ->
+    supervisor:start_link(?MODULE, [Timeout]).
 
 
 %%====================================================================
@@ -30,13 +30,19 @@ start_link() ->
 %%====================================================================
 
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
-init([]) ->
+init([Timeout]) ->
   SupFlags = #{
-    strategy  => one_for_one,
+    strategy  => simple_one_for_one,
     intensity => 10,
     period    => 10},
 
-  Childs = [],
+  Childs = [#{
+    id       => domain,
+    start    => {ecldb_domain, start_link, []},
+    restart  => permanent,
+    shutdown => Timeout,
+    type     => worker
+  }],
 
   {ok, {SupFlags, Childs}}.
 
@@ -46,16 +52,9 @@ init([]) ->
 %% Internal functions
 %%====================================================================
 
-%%
 start_domain(Cluster, Domain) when is_atom(Cluster), is_atom(Domain) ->
   {ok, ClusterSupPid} = ecldb:get_sup_pid(Cluster),
-  ChildSpec = #{
-      id       => Domain,
-      start    => {ecldb_domain, start_link, [Cluster, Domain]},
-      restart  => permanent,
-      shutdown => 20000, %% Large for stop all childs
-      type     => worker},
-  case supervisor:start_child(ClusterSupPid, ChildSpec) of
+  case supervisor:start_child(ClusterSupPid, [Cluster, Domain]) of
     {ok, _Pid} -> ok;
     {error,R} -> ?e(start_error, R);
     Else      -> ?e(start_error, Else)
@@ -69,12 +68,7 @@ start_domain(Cluster, Domain) ->
 stop_domain(Cluster, Domain) ->
   {ok, ClusterSupPid} = ecldb:get_sup_pid(Cluster),
   case supervisor:terminate_child(ClusterSupPid, Domain) of
-    ok   -> 
-      case supervisor:delete_child(ClusterSupPid, Domain) of
-        ok        -> ok;
-        {error,R} -> ?e(start_error, R);
-        Else      -> ?e(start_error, Else)
-      end;
-    Else -> Else
+    ok   -> ok;
+    Else -> ?e(stop_error, Else)
   end.
 

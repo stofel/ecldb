@@ -9,7 +9,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/2]).
+-export([start_link/3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -23,8 +23,8 @@
 %% API functions
 %%====================================================================
 
-start_link(Name, Args) ->
-    supervisor:start_link(?MODULE, [Name, Args]).
+start_link(Name, Args, Timeout) ->
+    supervisor:start_link(?MODULE, [Name, Args, Timeout]).
 
 
 %%====================================================================
@@ -32,7 +32,7 @@ start_link(Name, Args) ->
 %%====================================================================
 
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
-init([Name, Args]) ->
+init([Name, Args, Timeout]) ->
   SupFlags = #{
     strategy  => one_for_one,
     intensity => 10,
@@ -40,9 +40,9 @@ init([Name, Args]) ->
 
   Childs = [
     #{id       => sup,
-      start    => {ecldb_domain_sup, start_link, []},
+      start    => {ecldb_domain_sup, start_link, [Timeout]},
       restart  => permanent,
-      shutdown => 50000,
+      shutdown => Timeout + 5000,
       type     => supervisor},
     #{id       => srv,
       start    => {ecldb_cluster, start_link, [Args#{name => Name}]},
