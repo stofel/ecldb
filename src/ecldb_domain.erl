@@ -101,7 +101,7 @@ init(#{name := Name, cluster := ClusterName}) ->
     ets     => Ets,
     q       => #{},           %% Queues
     out     => ordsets:new(), %% Timeout ordered set
-    c       => orddict:new()     %% Childs {Key, Pid}
+    c       => orddict:new()  %% Childs {Key, Pid}
   }, 
   process_flag(trap_exit, true),
   {ok, S}.
